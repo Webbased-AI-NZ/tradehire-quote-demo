@@ -97,6 +97,8 @@
   .zoomer svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   .wall-hit { stroke: transparent; stroke-width: 22; cursor: pointer; }
   .wall-vis { stroke-width: 6; stroke-linecap: round; pointer-events: none; }
+  .wall-vis.both { stroke-width: 11; }
+  .wall-edge { stroke-width: 4; stroke-linecap: round; pointer-events: none; }
   .wall-vis.none { stroke-dasharray: 6 8; stroke-width: 3; }
   .wall-vis.sel { filter: drop-shadow(0 0 6px #fff); }
   .power { stroke: var(--c-power); stroke-width: 7; stroke-dasharray: 18 12; stroke-linecap: round; }
@@ -121,6 +123,7 @@
   .lines { display: grid; }
   .line { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
   .line:last-child { border-bottom: 0; }
+  .line.chg { background: var(--accent-bg); box-shadow: -8px 0 0 var(--accent-bg), 8px 0 0 var(--accent-bg); border-radius: 4px; }
   .line .name { font-weight: 600; font-size: 13.5px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .line .qty { font-size: 12px; color: var(--ink-soft); grid-column: 1; }
   .line .amt { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; grid-row: 1 / span 2; grid-column: 2; align-self: center; }
@@ -356,9 +359,11 @@
         <div class="card-b">
           <div class="row aro-only" hidden><button class="btn" type="button" id="sorBtn">Use AroFlo's price list</button><span class="status muted" id="sorStatus"></span></div>
           <div class="lines" id="lines"></div>
+          <div class="status" id="priceChange" aria-live="polite"></div>
           <div class="totals" id="totals"></div>
           <div id="blockers" hidden class="warnbox"></div>
           <div class="note" id="backcost"></div>
+          <p class="small muted">What sets the price: <b>access</b> sets the scaffold rate (easy lowest, hard highest); the <b>job type</b> sets which lines appear; the <b>marked walls</b> set the square face metres (scaffold, shrink wrap) and lineal metres (edge protection); <b>weeks up</b> set the weekly rent and site checks.</p>
         </div>
       </section>
 
@@ -436,8 +441,8 @@ function buildRings() {
   const rings = [];
   SITE.walls.forEach(w => {
     let r = rings[rings.length - 1];
-    if (!r || r.name !== w.building) { r = { name: w.building, pts: [], h: [], linzH: [], part: [] }; rings.push(r); }
-    r.pts.push([w.a[0], w.a[1]]); r.h.push(w.height_m); r.linzH.push(w.height_m); r.part.push(w.main === false ? "none" : "scaffold");
+    if (!r || r.name !== w.building) { r = { name: w.building, pts: [], h: [], linzH: [], part: [], edge: [] }; rings.push(r); }
+    r.pts.push([w.a[0], w.a[1]]); r.h.push(w.height_m); r.linzH.push(w.height_m); r.part.push(w.main === false ? "none" : "scaffold"); r.edge.push(false);
   });
   return rings;
 }
@@ -445,7 +450,7 @@ function walls() {
   const out = [];
   S.rings.forEach((r, ri) => r.pts.forEach((a, i) => {
     const b = r.pts[(i + 1) % r.pts.length];
-    out.push({ ri, i, a, b, building: r.name, length_m: Math.hypot(b[0] - a[0], b[1] - a[1]) * SITE.image.m_per_px, height_m: r.h[i], linz_h: r.linzH[i], part: r.part[i] });
+    out.push({ ri, i, a, b, building: r.name, length_m: Math.hypot(b[0] - a[0], b[1] - a[1]) * SITE.image.m_per_px, height_m: r.h[i], linz_h: r.linzH[i], part: r.part[i], edge: !!r.edge[i] });
   }));
   return out;
 }
@@ -485,7 +490,7 @@ function loadSample() {
   S.rings = buildRings(); S.edited = false;
   S.rings.forEach(r => r.pts.forEach((a, i) => {
     const b = r.pts[(i + 1) % r.pts.length];
-    r.part[i] = (a[1] + b[1]) / 2 < H * 0.3 ? "edge" : "scaffold";
+    r.part[i] = "scaffold"; r.edge[i] = (a[1] + b[1]) / 2 < H * 0.3; // the sample: scaffold all round, edge protection on the north side as well
   }));
   S.power = SITE.sample_job ? [[[1735, 330], [1760, 560]]] : [];
   $("client").value = "Bloggs Roofing Ltd (example)"; $("first").value = "Jo"; $("last").value = "Bloggs";
@@ -506,7 +511,9 @@ function drawPlan() {
   if (S.brush === "move") svg.appendChild(el("rect", { x: 0, y: 0, width: SITE.image.w, height: SITE.image.h, class: "move-hit" }));
   walls().forEach((w, n) => {
     const sel = S.selWall && S.selWall.ri === w.ri && S.selWall.i === w.i;
-    svg.appendChild(el("line", { x1: w.a[0], y1: w.a[1], x2: w.b[0], y2: w.b[1], class: "wall-vis " + w.part + (sel ? " sel" : ""), stroke: COLOUR[w.part] }));
+    const base = w.part === "none" && w.edge ? "edge" : w.part;
+    svg.appendChild(el("line", { x1: w.a[0], y1: w.a[1], x2: w.b[0], y2: w.b[1], class: "wall-vis " + base + (w.edge && w.part !== "none" ? " both" : "") + (sel ? " sel" : ""), stroke: COLOUR[base] }));
+    if (w.edge && w.part !== "none") svg.appendChild(el("line", { x1: w.a[0], y1: w.a[1], x2: w.b[0], y2: w.b[1], class: "wall-edge", stroke: COLOUR.edge }));
     const hit = el("line", { x1: w.a[0], y1: w.a[1], x2: w.b[0], y2: w.b[1], class: "wall-hit" });
     hit.dataset.ri = w.ri; hit.dataset.i = w.i;
     const t = el("title", {}); t.textContent = `${w.building}: ${r1(w.length_m)} m long, ${r1(w.height_m)} m high`;
@@ -528,10 +535,14 @@ function svgPoint(evt) {
   const p = pt.matrixTransform(svg.getScreenCTM().inverse());
   return [Math.round(Math.min(SITE.image.w, Math.max(0, p.x))), Math.round(Math.min(SITE.image.h, Math.max(0, p.y)))];
 }
+function wallLabel(w) {
+  const base = w.part === "wrap" ? "Shrink wrap on scaffold" : w.part === "scaffold" ? "Scaffold" : "";
+  return [base, w.edge ? (base ? "edge protection" : "Edge protection") : ""].filter(Boolean).join(" and ") || "nothing";
+}
 function showWall(ri, i) {
   const w = walls().find(x => x.ri === ri && x.i === i); if (!w) return;
   const one = num($("oneHeight").value);
-  $("wallInfo").innerHTML = `<b>${esc(w.building)}</b>: ${r1(w.length_m)} m long, now ${esc(w.part === "wrap" ? "Shrink wrap on scaffold" : RATES.colours[w.part]?.label ?? "nothing")}. `
+  $("wallInfo").innerHTML = `<b>${esc(w.building)}</b>: ${r1(w.length_m)} m long, now ${esc(wallLabel(w))}. `
     + `<label for="wallH">Height</label> <input type="number" id="wallH" min="0" step="0.1" value="${r1(w.height_m)}" style="width:90px"> m `
     + `<span class="muted">(LINZ ${r1(w.linz_h)} m${one ? `; every wall is using ${r1(one)} m` : ""})</span>`;
   $("wallH").oninput = e => { const v = num(e.target.value); if (v && v > 0) { S.rings[ri].h[i] = v; render(); } };
@@ -580,12 +591,16 @@ $("plan").addEventListener("click", e => {
   if (S.brush === "adjust") {
     if (Date.now() - (S.lastDrag || 0) < 300) return;
     const r = S.rings[ri], p = svgPoint(e);
-    r.pts.splice(i + 1, 0, p); r.h.splice(i + 1, 0, r.h[i]); r.linzH.splice(i + 1, 0, r.linzH[i]); r.part.splice(i + 1, 0, r.part[i]);
+    r.pts.splice(i + 1, 0, p); r.h.splice(i + 1, 0, r.h[i]); r.linzH.splice(i + 1, 0, r.linzH[i]); r.part.splice(i + 1, 0, r.part[i]); r.edge.splice(i + 1, 0, r.edge[i]);
     S.selCorner = { ri, i: i + 1 }; S.edited = true;
     $("wallInfo").textContent = "Corner added. Drag it into place. Both halves of the wall keep its height.";
     render(); return;
   }
-  S.rings[ri].part[i] = S.brush; S.selWall = { ri, i };
+  const r = S.rings[ri];
+  if (S.brush === "edge") r.edge[i] = !r.edge[i]; // edge protection goes on top of whatever the wall already has
+  else if (S.brush === "none") { r.part[i] = "none"; r.edge[i] = false; }
+  else r.part[i] = S.brush;
+  S.selWall = { ri, i };
   render(); showWall(ri, i);
 });
 document.querySelectorAll(".brush").forEach(b => b.onclick = () => {
@@ -597,6 +612,7 @@ document.querySelectorAll(".brush").forEach(b => b.onclick = () => {
   $("wallInfo").textContent = S.brush === "power" ? "Tap where the power line starts, then where it ends."
     : S.brush === "move" ? "Aerial photos make roofs lean, so the outline can sit a metre or two off the roof. Drag anywhere on the photo to slide the whole outline onto the roof, or use the arrows. The wall lengths don't change."
     : S.brush === "adjust" ? "Drag a corner to move it. Tap a wall to add a corner there. Tap a corner to select it, then Remove corner."
+    : S.brush === "edge" ? "Tap a wall to add or remove edge protection. It goes on top of the wall's scaffold, so one wall can have both."
     : "Tap a wall to colour it with the chosen part, and to see or change its height.";
   drawPlan();
 });
@@ -605,7 +621,7 @@ document.querySelectorAll("[data-nudge]").forEach(b => b.onclick = () => { // a 
   S.rings.forEach(r => { r.pts = r.pts.map(([x, y]) => [x + ux * step, y + uy * step]); }); S.edited = true;
   $("wallInfo").textContent = "Outline moved a quarter of a metre. The wall lengths haven't changed."; render();
 });
-$("resetMove").onclick = () => { const parts = S.rings.map(r => r.part.slice()), hs = S.rings.map(r => r.h.slice()); S.rings = buildRings(); if (S.rings.every((r, i) => parts[i] && r.pts.length === parts[i].length)) S.rings.forEach((r, i) => { r.part = parts[i]; r.h = hs[i]; }); S.edited = false; $("wallInfo").textContent = "Outline put back where LINZ has it."; render(); };
+$("resetMove").onclick = () => { const parts = S.rings.map(r => r.part.slice()), edges = S.rings.map(r => r.edge.slice()), hs = S.rings.map(r => r.h.slice()); S.rings = buildRings(); if (S.rings.every((r, i) => parts[i] && r.pts.length === parts[i].length)) S.rings.forEach((r, i) => { r.part = parts[i]; r.edge = edges[i]; r.h = hs[i]; }); S.edited = false; $("wallInfo").textContent = "Outline put back where LINZ has it."; render(); };
 $("allScaffold").onclick = () => { S.rings.forEach(r => { r.part = r.part.map(() => "scaffold"); }); render(); };
 $("clearPower").onclick = () => { S.power = []; S.pending = null; render(); };
 $("removeCorner").onclick = () => {
@@ -613,7 +629,7 @@ $("removeCorner").onclick = () => {
   const r = S.rings[c.ri];
   if (r.pts.length <= 3) { $("wallInfo").textContent = "A building needs at least three corners."; return; }
   const prev = (c.i - 1 + r.pts.length) % r.pts.length;
-  r.pts.splice(c.i, 1); r.h.splice(c.i, 1); r.linzH.splice(c.i, 1); r.part.splice(c.i, 1);
+  r.pts.splice(c.i, 1); r.h.splice(c.i, 1); r.linzH.splice(c.i, 1); r.part.splice(c.i, 1); r.edge.splice(c.i, 1);
   S.selCorner = null; S.edited = true;
   $("wallInfo").textContent = `Corner removed. The two walls are now one, using the earlier wall's height and colour (wall before it: ${r1(r.h[Math.min(prev, r.h.length - 1)])} m).`;
   render();
@@ -633,7 +649,8 @@ function measures() {
   if (S.site === "sample") {
     const W = walls();
     const sum = part => W.reduce((a, w) => w.part !== part ? a : { len: a.len + w.length_m, face: a.face + w.length_m * heightOf(w), n: a.n + 1 }, { len: 0, face: 0, n: 0 });
-    return { scaffold: sum("scaffold"), wrap: sum("wrap"), edge: sum("edge"), power: S.power.length };
+    const edge = W.reduce((a, w) => !w.edge ? a : { len: a.len + w.length_m, face: 0, n: a.n + 1 }, { len: 0, face: 0, n: 0 });
+    return { scaffold: sum("scaffold"), wrap: sum("wrap"), edge, power: S.power.length };
   }
   const h = num($("mHeight").value), len = num($("mLength").value), e = num($("mEdge").value);
   const z = { len: 0, face: 0, n: 0 };
@@ -658,7 +675,7 @@ function quote() {
   const tier = S.access ? R.tiers[S.access] : null;
   const scaff = m.scaffold.face > 0, wrap = m.wrap.face > 0;
   if (scaff) {
-    if (tier) lines.push({ key: "scaffold", part: P.scaffold.part, name: P.scaffold.name, qty: `${r1(m.scaffold.face)} square face metres × ${$r(tier.rate)} (${S.access})`, amt: priced(m.scaffold.face, tier.rate), tag: tier.status, quantity: m.scaffold.face, unit: tier.rate });
+    if (tier) lines.push({ key: "scaffold", part: P.scaffold.part, name: P.scaffold.name, qty: `${r1(m.scaffold.face)} square face metres × ${HIDE ? `${S.access} rate${S.access === "easy" ? " (lowest)" : S.access === "hard" ? " (highest)" : ""}` : `$${tier.rate} (${S.access})`}`, amt: priced(m.scaffold.face, tier.rate), tag: tier.status, quantity: m.scaffold.face, unit: tier.rate });
     else lines.push({ part: P.scaffold.part, name: P.scaffold.name, qty: `${r1(m.scaffold.face)} square face metres · choose easy, medium or hard`, amt: null });
   }
   if (wrap) lines.push({ part: P.scaffold_wrap.part, name: P.scaffold_wrap.name, qty: `${r1(m.wrap.face)} square face metres of scaffold with shrink wrap, as one line · rate not set yet`, amt: null, tag: "not_set" });
@@ -702,7 +719,17 @@ function render() {
   $("legend").innerHTML = leg.map(([k, label, v, extra]) => `<div class="leg"><b><span class="sw" style="background:${COLOUR[k]}"></span>${label}</b><span>${v.n} walls · ${r1(v.len)} m</span><span>${k === "edge" ? "lineal metres" : r1(v.face) + " square face m"}</span>${extra ? `<span class="muted">${extra}</span>` : ""}</div>`).join("")
     + `<div class="leg"><b><span class="sw dash"></span>Power lines</b><span>${m.power} marked</span><span>sleeving, not measured</span></div>`;
 
-  $("lines").innerHTML = q.lines.length ? q.lines.map(l => { const a = aroPart(l); return `<div class="line"><div class="name"><span class="part">${esc(a ? a.partNumber : l.part)}</span>${esc(a ? a.name : l.name)} ${l.tag ? TAG[l.tag] || "" : ""}</div><div class="qty">${esc(l.qty)}${a && a.quoteSell != null && !HIDE ? ` · AroFlo list price ${money(Number(a.quoteSell))}${a.unitType ? " per " + esc(a.unitType) : ""}` : ""}</div><div class="amt">${l.amt === null ? (HIDE && l.quantity > 0 ? '<span class="muted small">rate card</span>' : "-") : money(l.amt)}</div></div>`; }).join("") : '<p class="muted">Nothing to price yet.</p>';
+  // highlight the lines that changed, and say what changed, so a change of access or job type shows in the price
+  const lineKey = l => l.part + " " + l.name, prevLines = S.prevLines || null, nowLines = new Map(q.lines.map(l => [lineKey(l), l.qty]));
+  const changed = l => prevLines && prevLines.get(lineKey(l)) !== l.qty;
+  $("lines").innerHTML = q.lines.length ? q.lines.map(l => { const a = aroPart(l); return `<div class="line${changed(l) ? " chg" : ""}"><div class="name"><span class="part">${esc(a ? a.partNumber : l.part)}</span>${esc(a ? a.name : l.name)} ${l.tag ? TAG[l.tag] || "" : ""}</div><div class="qty">${esc(l.qty)}${a && a.quoteSell != null && !HIDE ? ` · AroFlo list price ${money(Number(a.quoteSell))}${a.unitType ? " per " + esc(a.unitType) : ""}` : ""}</div><div class="amt">${l.amt === null ? (HIDE && l.quantity > 0 ? '<span class="muted small">rate card</span>' : "-") : money(l.amt)}</div></div>`; }).join("") : '<p class="muted">Nothing to price yet.</p>';
+  if (prevLines) {
+    const added = q.lines.filter(l => !prevLines.has(lineKey(l))).map(l => l.name), removed = [...prevLines.keys()].filter(k => !nowLines.has(k)).map(k => k.replace(/^\S+ /, ""));
+    const moved = q.lines.filter(l => prevLines.has(lineKey(l)) && prevLines.get(lineKey(l)) !== l.qty).map(l => l.name);
+    const parts = [added.length ? "Added: " + added.join(", ") : "", removed.length ? "Removed: " + removed.join(", ") : "", moved.length ? "Changed: " + moved.join(", ") : ""].filter(Boolean);
+    if (parts.length) { $("priceChange").textContent = parts.join(". ") + "."; clearTimeout(S.chgTimer); S.chgTimer = setTimeout(() => { $("priceChange").textContent = ""; document.querySelectorAll(".line.chg").forEach(e => e.classList.remove("chg")); }, 4000); }
+  }
+  S.prevLines = nowLines;
   $("totals").innerHTML = HIDE ? (q.lines.length ? `<div class="note">Prices are hidden on this public demo. In TradeHire's version every line is priced from TradeHire's rate card, with the subtotal, GST and total here.</div>` : "") : `<div><span>Subtotal</span><span>${money(q.sub)}</span></div><div><span>GST 15%</span><span>${money(q.gst)}</span></div><div class="grand"><span>Total</span><span>${money(q.total)}</span></div>`;
   $("blockers").hidden = !q.blockers.length;
   $("blockers").innerHTML = q.blockers.length ? "Before this can go to AroFlo:<br>" + q.blockers.map(esc).join("<br>") : "";
@@ -728,7 +755,7 @@ function jobTypesNow() {
   const parts = new Set(S.rings.flatMap(r => r.part)), out = new Set();
   if (parts.has("scaffold") || parts.has("wrap")) out.add("scaffold"); // shrink wrap goes on scaffold
   if (parts.has("wrap")) out.add("wrap");
-  if (parts.has("edge")) out.add("edge");
+  if (S.rings.some(r => r.edge.some(Boolean))) out.add("edge");
   return out;
 }
 function pickBrush(name) { document.querySelector(`.brush[data-brush="${name}"]`)?.click(); }
@@ -752,8 +779,8 @@ document.querySelectorAll("#jobTypes .chip").forEach(c => c.onclick = () => {
     else { if (!S.rings.some(r => r.part.includes("scaffold"))) markMain("scaffold"); setAll(["scaffold"], "wrap"); }
     $("wallInfo").textContent = on ? "Shrink wrap taken off; those walls stay as scaffold." : "The scaffold walls now have shrink wrap on them. Tap a wall to change it.";
   } else {
-    if (on) { setAll(["edge"], "none"); $("wallInfo").textContent = "Edge protection taken off."; }
-    else { pickBrush("edge"); $("wallInfo").textContent = "Edge protection is usually only some sides: tap each wall that needs it (blue)."; }
+    if (on) { S.rings.forEach(r => { r.edge = r.edge.map(() => false); }); $("wallInfo").textContent = "Edge protection taken off; the scaffold stays."; }
+    else { pickBrush("edge"); $("wallInfo").textContent = "Edge protection is usually only some sides: tap each wall that needs it. It adds a blue stripe and keeps the wall's scaffold."; }
   }
   render();
 });
@@ -876,9 +903,9 @@ $("dlPlan").onclick = async () => {
   g.drawImage(img, 0, 0, W, H);
   g.lineCap = "round";
   walls().forEach(w => {
-    const p = w.part; if (p === "none") return;
-    g.strokeStyle = HEX[p]; g.lineWidth = 7; g.setLineDash([]);
-    g.beginPath(); g.moveTo(w.a[0], w.a[1]); g.lineTo(w.b[0], w.b[1]); g.stroke();
+    const line = (hex, width) => { g.strokeStyle = hex; g.lineWidth = width; g.setLineDash([]); g.beginPath(); g.moveTo(w.a[0], w.a[1]); g.lineTo(w.b[0], w.b[1]); g.stroke(); };
+    if (w.part !== "none") line(HEX[w.part], 7);
+    if (w.edge) line(HEX.edge, w.part === "none" ? 7 : 3);
   });
   g.strokeStyle = HEX.power; g.lineWidth = 8; g.setLineDash([20, 12]);
   S.power.forEach(([p, q]) => { g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke(); });
