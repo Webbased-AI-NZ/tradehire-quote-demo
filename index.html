@@ -332,6 +332,7 @@
                 <button class="chip" type="button" data-job="wrap" aria-pressed="false">Shrink wrap</button>
                 <button class="chip" type="button" data-job="edge" aria-pressed="false">Edge protection</button>
               </div>
+              <p class="small muted" style="margin-top:6px">These do the whole building. Tap one wall at a time on the plan for anything that's only some sides.</p>
             </div>
             <p class="small muted" id="clientNote" hidden>When AroFlo is connected, "Find in AroFlo" searches TradeHire's clients first; a new client is only added if there's no match.</p>
             <div><span class="k">Access</span>
@@ -773,14 +774,14 @@ document.querySelectorAll("#jobTypes .chip").forEach(c => c.onclick = () => {
   if (t === "scaffold") {
     if (on) setAll(["scaffold", "wrap"], "none");
     else markMain("scaffold");
-    $("wallInfo").textContent = on ? "Scaffold taken off every wall." : "The main building's walls are marked as scaffold. Tap any wall that doesn't need it and choose Nothing.";
+    $("wallInfo").textContent = on ? "Scaffold taken off every wall." : "Scaffold on every wall. If a side doesn't need it, choose Nothing and tap that wall.";
   } else if (t === "wrap") {
     if (on) setAll(["wrap"], "scaffold");
     else { if (!S.rings.some(r => r.part.includes("scaffold"))) markMain("scaffold"); setAll(["scaffold"], "wrap"); }
-    $("wallInfo").textContent = on ? "Shrink wrap taken off; those walls stay as scaffold." : "The scaffold walls now have shrink wrap on them. Tap a wall to change it.";
+    $("wallInfo").textContent = on ? "Shrink wrap taken off; those walls stay as scaffold." : "Shrink wrap on every scaffold wall. To leave a side unwrapped, choose Scaffold and tap that wall.";
   } else {
     if (on) { S.rings.forEach(r => { r.edge = r.edge.map(() => false); }); $("wallInfo").textContent = "Edge protection taken off; the scaffold stays."; }
-    else { pickBrush("edge"); $("wallInfo").textContent = "Edge protection is usually only some sides: tap each wall that needs it. It adds a blue stripe and keeps the wall's scaffold."; }
+    else { mainRings.forEach(r => { r.edge = r.edge.map(() => true); }); pickBrush("edge"); $("wallInfo").textContent = "Edge protection added all round, on top of the scaffold (the blue stripe). If only some sides need it, tap the walls that don't to take it off."; }
   }
   render();
 });
