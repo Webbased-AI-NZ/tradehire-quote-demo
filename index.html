@@ -179,7 +179,7 @@
       <div style="display:grid;gap:10px;">
         <p id="guideIntro">A sample job is already loaded below: a made-up request for a real building, the aquatic centre in Hamilton. Its measurements come from LINZ's free laser scans and aerial photos.</p>
         <ol>
-          <li><b>Start the quote</b> in step 1. Paste a text or email (there's an example to try) and Claude reads it the way TradeHire's quote skill does, listing anything still needed. Or type the details in. If you're not signed in to Claude, the paste option is hidden, so type the details.</li>
+          <li id="guideStart"><b>Start the quote</b> in step 1. Paste a text or email (there's an example to try) and Claude reads it the way TradeHire's quote skill does, listing anything still needed. Or type the details in. If you're not signed in to Claude, the paste option is hidden, so type the details.</li>
           <li><b>Speak the job</b> in step 1 instead of typing: tap the microphone, say the address, the job, storeys, weeks, access and the client, then tap Stop. The details fill in and the address is measured. Your browser turns the speech into text (Chrome and Edge use Google's service, Safari uses Apple's).</li>
           <li id="guideLive" hidden><b>Measure any address</b> in step 2. Type the number and street, with the suburb or town if you like, press Find and pick the address. The building is measured live from LINZ in a few seconds: outline, each wall's height, roof pitch and the aerial photo.</li>
           <li><b>Mark up the plan</b> in step 2. Pick a colour, then tap walls: dark green for scaffold, highlighter green for shrink wrap, blue for edge protection. Choose <i>Power line</i> and tap two points to draw a red marker. Zoom in for large sites.</li>
@@ -206,7 +206,7 @@
     <div class="side">
     <section class="card" id="planCard">
       <div class="card-h">
-        <h2><span class="n">2</span>Measure and mark the plan</h2>
+        <h2><span class="n" id="nPlan">2</span>Measure and mark the plan</h2>
         <div class="row">
           <select id="siteSelect" aria-label="Site"></select>
         </div>
@@ -292,8 +292,8 @@
     <div class="side">
 
       <section class="card" id="startCard">
-        <div class="card-h"><h2><span class="n">1</span>Start the quote</h2>
-          <div class="tabs" role="tablist">
+        <div class="card-h"><h2><span class="n" id="nStart">1</span><span id="startTitle">Start the quote</span></h2>
+          <div class="tabs" role="tablist" id="startTabs">
             <button class="tab" type="button" role="tab" id="tabPaste" aria-selected="false">Paste a message</button>
             <button class="tab" type="button" role="tab" id="tabType" aria-selected="true">Type the details</button>
           </div>
@@ -727,7 +727,7 @@ let sample = null, ctl = null;
 (async () => {
   try { sample = window.claude ? await window.claude.use("sample") : null; } catch { sample = null; }
   if (sample) showTab(true);
-  else { $("tabPaste").hidden = true; }
+  else { $("startTabs").hidden = true; }
 })();
 const READ_FAIL = {
   not_granted: "Claude isn't allowed on this page for you, so type the details instead.",
@@ -751,7 +751,7 @@ $("readBtn").onclick = async () => {
     $("readStatus").textContent = "Done. Check the details below and in the form.";
   } catch (e) {
     $("readStatus").textContent = e?.code === "cancelled" ? "Stopped." : (READ_FAIL[e?.code] || "Claude couldn't read it this time. Try again, or type the details.");
-    if (["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed"].includes(e?.code)) { $("tabPaste").hidden = true; showTab(false); }
+    if (["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed"].includes(e?.code)) { $("startTabs").hidden = true; showTab(false); }
   } finally {
     $("readBtn").disabled = false; $("stopBtn").hidden = true;
   }
@@ -1344,10 +1344,16 @@ function applySpoken(d) {
 /* ---------- the web page: measure any address live from LINZ ---------- */
 function setupLive() {
   $("reqCard").hidden = true; $("liveBox").hidden = false; $("guideLive").hidden = false;
-  $("guideIntro").textContent = "A sample job is already loaded below: a made-up request for a real building, the aquatic centre in Hamilton. Or measure any New Zealand address in step 2; the measurements come live from LINZ's free laser scans, building outlines and aerial photos.";
+  $("guideIntro").textContent = "A sample job is already loaded below: a made-up request for a real building, the aquatic centre in Hamilton. Or measure any New Zealand address in step 1; the measurements come live from LINZ's free laser scans, building outlines and aerial photos.";
   $("factLinz").innerHTML = '<span class="tag ok">Real</span><span>LINZ for any address, measured live in your browser: the official building outline, each wall\'s height from the newest laser scan, and the newest aerial photo. Some new buildings have no LINZ outline yet; type those measurements.</span>';
   $("factClaude").innerHTML = '<span class="tag off">In Claude</span><span>Reading a pasted email or text needs Claude, so on this web page type the details. In TradeHire\'s Claude the quote skill reads the email.</span>';
   $("manualNote").textContent = "Type the measurements for this address, or measure it from LINZ with the address box above.";
+  // on the web page you start from the address, so the plan is step 1 and the job details step 2
+  $("nPlan").textContent = "1"; $("nStart").textContent = "2"; $("startTitle").textContent = "Job details";
+  $("guideStart").innerHTML = "<b>Fill in the job details</b> in step 2: type them, or tap <i>Speak the job</i> and say them.";
+  $("guideBody").querySelectorAll("li").forEach(li => { li.innerHTML = li.innerHTML.replace(/step 1/g, "step \u0000").replace(/step 2/g, "step 1").replace(/step \u0000/g, "step 2"); });
+  $("guideStart").innerHTML = "<b>Fill in the job details</b> in step 2: type them, or tap <i>Speak the job</i> and say them.";
+  $("guideLive").parentNode.prepend($("guideLive"));
   if (HIDE) $("guidePrice").innerHTML = "<b>Check the price</b> in step 3. Every line uses an AroFlo part and shows the quantity. Prices are hidden on this public demo; in TradeHire's version each line is priced from TradeHire's rate card.";
   let libs = null, seq = 0;
   const load = () => libs ||= Promise.all([
@@ -1383,6 +1389,7 @@ function setupLive() {
       const [LM, GeoTIFF, index] = await load();
       const site = await LM.measureAt(a.x, a.y, { GeoTIFF, index, label: a.label, makeImage: photoFrom, onStep: s => { if (my === seq) status(`${s}...`); } });
       if (my !== seq) return;
+      if ($("client").value === "Bloggs Roofing Ltd (example)") ["client", "first", "last", "mobile", "email"].forEach(id => { $(id).value = ""; }); // the example customer belongs to the sample building
       SITES.push(site); fillSiteSelect(); chooseSite(SITES.length - 1);
       if (S.afterMeasure) { S.afterMeasure(); S.afterMeasure = null; }
       $("addr").value = a.label;

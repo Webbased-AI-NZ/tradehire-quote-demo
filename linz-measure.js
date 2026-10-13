@@ -129,24 +129,33 @@ export async function readWindow(GeoTIFF, index, col, win, res, { bandsWanted = 
   const [x0, y0, x1, y1] = win, W = Math.max(1, Math.round((x1 - x0) / res)), H = Math.max(1, Math.round((y1 - y0) / res));
   const out = Array.from({ length: bandsWanted }, () => new Float32Array(W * H).fill(NaN));
   const names = new Set();
-  for (let x = x0; x <= x1 + 1; x += 50) for (let y = y0; y <= y1 + 1; y += 50) names.add(tileName(Math.min(x, x1), Math.min(y, y1), col.scale));
+  const steps = (a, b) => { const v = []; for (let t = a; t < b; t += 50) v.push(t); v.push(b - 0.01); return v; }; // every tile the window touches, edges included
+  for (const x of steps(x0, x1)) for (const y of steps(y0, y1)) names.add(tileName(x, y, col.scale));
   let got = false;
   for (const name of names) {
-    let tiff;
-    try { tiff = await GeoTIFF.fromUrl(`${bucket}/${col.href}/${name}.tiff`, { allowFullFile: false }); } catch { continue; }
-    let img;
-    try { img = await tiff.getImage(); } catch { continue; }
-    const count = await tiff.getImageCount();
-    const [rx] = img.getResolution();
-    let use = img;
-    for (let i = 1; i < count; i++) { const o = await tiff.getImage(i); const ratio = img.getWidth() / o.getWidth(); if (Math.abs(rx) * ratio <= res * 1.01) use = o; else break; }
-    const ratio = img.getWidth() / use.getWidth(), ores = Math.abs(rx) * ratio, [ox, oy] = img.getOrigin();
-    const px0 = Math.max(0, Math.floor((x0 - ox) / ores)), py0 = Math.max(0, Math.floor((oy - y1) / ores));
-    const px1 = Math.min(use.getWidth(), Math.ceil((x1 - ox) / ores)), py1 = Math.min(use.getHeight(), Math.ceil((oy - y0) / ores));
-    if (px1 <= px0 || py1 <= py0) continue;
-    let rasters;
-    try { rasters = await use.readRasters({ window: [px0, py0, px1, py1], samples: [...Array(Math.min(bandsWanted, use.getSamplesPerPixel())).keys()] }); }
-    catch { continue; } // a survey without data here (in the browser, geotiff.js fails on such tiles instead of returning empty)
+    const url = `${bucket}/${col.href}/${name}.tiff`;
+    // geotiff.js 2.1.3 in a browser sometimes fails a read when a piece of the file ends exactly on one of its 64 KB
+    // cache blocks; opening the file again with an odd block size gets past it. A missing tile fails at the first open.
+    let tiff, img, use, rasters, ox, oy, ores, px0, py0, px1, py1, missing = false;
+    for (const blockSize of [65536, 65537, 131101]) {
+      try {
+        tiff = await GeoTIFF.fromUrl(url, { allowFullFile: false, blockSize });
+        img = await tiff.getImage();
+      } catch { missing = true; break; }
+      try {
+        const count = await tiff.getImageCount();
+        const [rx] = img.getResolution();
+        use = img;
+        for (let i = 1; i < count; i++) { const o = await tiff.getImage(i); const ratio = img.getWidth() / o.getWidth(); if (Math.abs(rx) * ratio <= res * 1.01) use = o; else break; }
+        ores = Math.abs(rx) * (img.getWidth() / use.getWidth()); [ox, oy] = img.getOrigin();
+        px0 = Math.max(0, Math.floor((x0 - ox) / ores)); py0 = Math.max(0, Math.floor((oy - y1) / ores));
+        px1 = Math.min(use.getWidth(), Math.ceil((x1 - ox) / ores)); py1 = Math.min(use.getHeight(), Math.ceil((oy - y0) / ores));
+        if (px1 <= px0 || py1 <= py0) { missing = true; break; }
+        rasters = await use.readRasters({ window: [px0, py0, px1, py1], samples: [...Array(Math.min(bandsWanted, use.getSamplesPerPixel())).keys()] });
+        break;
+      } catch { rasters = null; }
+    }
+    if (missing || !rasters) continue;
     const rw = px1 - px0, rh = py1 - py0, nodata = Number(img.getGDALNoData?.() ?? NaN);
     for (let j = 0; j < H; j++) {
       const wy = y1 - (j + 0.5) * res, sy = Math.floor((oy - wy) / ores) - py0;
@@ -282,6 +291,74 @@ function groundSlope(rings, dem, win) {
   return median(out);
 }
 
+/** The property (LINZ primary parcel) the address point sits in, as a ring of NZTM points, or null. */
+export async function parcelAt(x, y, { fetchImpl = fetch } = {}) {
+  try {
+    const feats = await arcgis(fetchImpl, "LINZ_NZ_Primary_Parcels", { geometry: `${x},${y}`, geometryType: "esriGeometryPoint", inSR: "2193", outSR: "2193", spatialRel: "esriSpatialRelIntersects", outFields: "appellation" });
+    const rings = feats.flatMap((f) => f.geometry?.rings || []).filter((r) => r.length >= 4);
+    return rings.length ? rings.reduce((a, b) => (Math.abs(ringArea(b)) > Math.abs(ringArea(a)) ? b : a)) : null;
+  } catch { return null; }
+}
+const centroid = (r) => [r.reduce((a, p) => a + p[0], 0) / r.length, r.reduce((a, p) => a + p[1], 0) / r.length];
+
+/**
+ * How far the aerial photo's roof sits from where the laser scan puts it, in metres [dx, dy]. Aerial photos are lined
+ * up to the ground, so a roof leans a metre or two away from where the plane was; the scan has no lean. This lines up
+ * the photo's edges with the scan's roof edges around the main building, and returns [0, 0] unless the match is clear.
+ */
+function photoOffset(rgb, dsm, dem, win, ring) {
+  if (!rgb || !dsm || !dem) return [0, 0];
+  const g = 0.25, [x0, y0, x1, y1] = win, W = Math.floor((x1 - x0) / g), H = Math.floor((y1 - y0) / g);
+  const k = Math.max(1, Math.round(g / rgb.res));
+  // photo brightness on a 0.25 m grid
+  const gray = new Float32Array(W * H).fill(NaN);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    let sum = 0, n = 0;
+    for (let b = 0; b < k; b++) for (let a = 0; a < k; a++) {
+      const si = Math.floor(((i * g) + (a + 0.5) * rgb.res) / rgb.res), sj = Math.floor(((j * g) + (b + 0.5) * rgb.res) / rgb.res);
+      if (si >= rgb.width || sj >= rgb.height) continue;
+      const q = sj * rgb.width + si, v = rgb.bands[0][q] + rgb.bands[1][q] + rgb.bands[2][q];
+      if (Number.isFinite(v)) { sum += v; n++; }
+    }
+    if (n) gray[j * W + i] = sum / n;
+  }
+  const Sd = sampler(dsm, win), Sg = sampler(dem, win);
+  const hAt = (x, y) => { const v = Sd(x, y) - Sg(x, y); return Number.isFinite(v) ? Math.max(0, Math.min(20, v)) : NaN; };
+  const grad = (f, i, j) => { const a = f(i + 1, j), b = f(i - 1, j), c = f(i, j + 1), d = f(i, j - 1); return Number.isFinite(a + b + c + d) ? Math.hypot(a - b, c - d) / 2 : NaN; };
+  const photoG = (i, j) => (i < 0 || j < 0 || i >= W || j >= H ? NaN : gray[j * W + i]);
+  const pe = new Float32Array(W * H).fill(NaN);
+  let pm = 0, pn = 0;
+  for (let j = 1; j < H - 1; j++) for (let i = 1; i < W - 1; i++) { const v = grad(photoG, i, j); pe[j * W + i] = v; if (Number.isFinite(v)) { pm += v; pn++; } }
+  if (!pn) return [0, 0];
+  pm /= pn;
+  // scan roof edges within 4 m of the main building's outline
+  const edges = [];
+  const hG = (i, j) => hAt(x0 + (i + 0.5) * g, y1 - (j + 0.5) * g);
+  const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]);
+  const i0 = Math.max(1, Math.floor((Math.min(...xs) - 4 - x0) / g)), i1 = Math.min(W - 2, Math.ceil((Math.max(...xs) + 4 - x0) / g));
+  const j0 = Math.max(1, Math.floor((y1 - Math.max(...ys) - 4) / g)), j1 = Math.min(H - 2, Math.ceil((y1 - Math.min(...ys) + 4) / g));
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const v = grad(hG, i, j) / g; // metres of height per metre
+    if (v > 1 && distToRing(x0 + (i + 0.5) * g, y1 - (j + 0.5) * g, ring) < 2.5) edges.push(j * W + i); // the roof's own edges, not trees further out
+  }
+  if (edges.length < 40) return [0, 0];
+  const score = (di, dj) => { let s = 0, n = 0; for (const q of edges) { const i = (q % W) + di, j = Math.floor(q / W) + dj; if (i < 0 || j < 0 || i >= W || j >= H) continue; const v = pe[j * W + i]; if (Number.isFinite(v)) { s += v; n++; } } return n > edges.length * 0.8 ? s / n / pm : 0; };
+  const zero = score(0, 0);
+  let best = [0, 0, zero];
+  const R = Math.round(3 / g);
+  for (let dj = -R; dj <= R; dj++) for (let di = -R; di <= R; di++) { const v = score(di, dj); if (v > best[2]) best = [di, dj, v]; }
+  const [di, dj, v] = best;
+  if (Math.hypot(di, dj) * g < 0.3 || v < zero * 1.12 || Math.abs(di) === R || Math.abs(dj) === R) return [0, 0];
+  return [di * g, -dj * g];
+}
+/** The photo grid moved by [dx, dy] metres so its roof lands where the scan puts it; the uncovered edge is left blank. */
+function shiftPhoto(rgb, [dx, dy]) {
+  if (!dx && !dy) return rgb;
+  const si = Math.round(dx / rgb.res), sj = Math.round(-dy / rgb.res), W = rgb.width, H = rgb.height;
+  const bands = rgb.bands.map((b) => { const o = new Float32Array(W * H).fill(NaN); for (let j = 0; j < H; j++) { const sy = j + sj; if (sy < 0 || sy >= H) continue; for (let i = 0; i < W; i++) { const sx = i + si; if (sx >= 0 && sx < W) o[j * W + i] = b[sy * W + sx]; } } return o; });
+  return { ...rgb, bands };
+}
+
 const dateOf = (s) => { const d = new Date(s); return Number.isNaN(d) ? s : d.toLocaleDateString("en-NZ", { month: "short", year: "numeric" }); };
 
 /**
@@ -295,9 +372,11 @@ export async function measureAt(x, y, { GeoTIFF, index, fetchImpl = fetch, makeI
   if (!outlines.length) throw new Error("LINZ has no building outline at this address. It may be a new building; type the measurements instead.");
   const dist = (o) => (pointInRing(x, y, o.ring) ? 0 : distToRing(x, y, o.ring));
   outlines.sort((a, b) => dist(a) - dist(b));
-  const main = outlines[0];
-  const gap = (o) => Math.min(...o.ring.map(([px, py]) => distToRing(px, py, main.ring)), ...main.ring.map(([px, py]) => distToRing(px, py, o.ring)));
-  const nearby = outlines.slice(1).filter((o) => gap(o) <= 6 && Math.abs(ringArea(o.ring)) >= 10).slice(0, 4); // a garage or shed beside it
+  // only buildings on this property: the one at the address, plus a garage or shed on the same section
+  const parcel = await parcelAt(x, y, { fetchImpl });
+  const onSite = (o) => parcel && pointInRing(...centroid(o.ring), parcel);
+  const main = outlines.find((o) => dist(o) === 0) || outlines.find(onSite) || outlines[0];
+  const nearby = parcel ? outlines.filter((o) => o !== main && onSite(o) && Math.abs(ringArea(o.ring)) >= 10).slice(0, 4) : [];
   const chosen = [main, ...nearby];
   const xs = chosen.flatMap((o) => o.ring.map((p) => p[0])), ys = chosen.flatMap((o) => o.ring.map((p) => p[1]));
   const m = 12, win = [Math.floor(Math.min(...xs) - m), Math.floor(Math.min(...ys) - m), Math.ceil(Math.max(...xs) + m), Math.ceil(Math.max(...ys) + m)];
@@ -310,7 +389,10 @@ export async function measureAt(x, y, { GeoTIFF, index, fetchImpl = fetch, makeI
     const span = Math.max(win[2] - win[0], win[3] - win[1]);
     const res = Math.max(0.075, span / 1600);
     const rgb = await readFirst(GeoTIFF, index, "rgb", lon, lat, win, res, { bandsWanted: 3 });
-    if (rgb) photo = { ...makeImage(rgb), res: rgb.res, col: rgb.col };
+    if (rgb) {
+      const shift = photoOffset(rgb, dsm, dem, win, main.ring);
+      photo = { ...makeImage(shiftPhoto(rgb, shift)), res: rgb.res, col: rgb.col, shift };
+    }
   }
   onStep("Measuring the walls");
   const res = photo ? photo.res : 0.1;
@@ -344,6 +426,7 @@ export async function measureAt(x, y, { GeoTIFF, index, fetchImpl = fetch, makeI
       lidar_flown: dsm ? [dateOf(dsm.col.start), dateOf(dsm.col.end)] : null,
       photos: photo ? photo.col.title : "no LINZ aerial photo found"
     },
-    note: `Measured live from LINZ open data. The main building is marked as scaffold; ${nearby.length ? "other buildings close by (a garage, a shed) are shown dashed as Nothing; tap their walls to include them. " : ""}The outline follows the walls as LINZ traced them${main.captured ? ` (${main.captured})` : ""}, so check it and adjust it if the building has changed.${dsm ? "" : " There's no laser scan here, so type the heights."}`
+    note: `Measured live from LINZ open data. The main building is marked as scaffold; ${nearby.length ? "other buildings on the same property (a garage, a shed) are shown dashed as Nothing; tap their walls to include them. " : ""}The outline follows the walls as LINZ traced them${main.captured ? ` (${main.captured})` : ""}, so check it and adjust it if the building has changed.${photo && (photo.shift[0] || photo.shift[1]) ? ` The photo has been moved ${r1(Math.hypot(...photo.shift))} m to line its roof up with the laser scan, because aerial photos make roofs lean; the ground in the photo may look slightly off as a result.` : ""}${dsm ? "" : " There's no laser scan here, so type the heights."}`
   };
 }
+
