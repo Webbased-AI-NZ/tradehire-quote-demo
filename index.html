@@ -188,7 +188,7 @@
           <li><b>Fix the outline</b> if it's off. Choose <i>Adjust outline</i>, drag a corner to move it, tap a wall to add a corner, or select a corner and remove it. Tap any wall to change its height.</li>
           <li id="guidePrice"><b>Check the price</b> in step 3. Every line uses an AroFlo part. Rates marked <span class="tag tc">To confirm</span> still need TradeHire's figure.</li>
           <li><b>Add site photos</b> at the bottom of step 1, from the customer's email or taken on site.</li>
-          <li><b>Finish</b> in step 4. Download the coloured plan, copy the quote, and see exactly what would go to AroFlo. Try the AroFlo buttons: find the client, use the price list, check with AroFlo, approve and put the quote in, then attach the photos. In this demo AroFlo's answers are examples; nothing is saved.</li>
+          <li><b>Finish</b> in step 4. Download the coloured plan or copy the quote, then press <i>Put quote into AroFlo</i>: it finds the client, shows you exactly what will be saved to approve, and then lets you attach the site photos. In this demo AroFlo's answers are examples; nothing is saved.</li>
           <li><b>Found something wrong?</b> Note the address and what you expected, and send it to Karrina.</li>
         </ol>
       </div>
@@ -325,7 +325,7 @@
           <div id="paneType" style="display:grid;gap:10px;">
             <div class="grid2">
               <div style="grid-column:1/-1"><label class="k" for="client">Client or business</label><input type="text" id="client">
-                <div class="row aro-only" hidden style="margin-top:6px"><button class="btn" type="button" id="findClient">Find in AroFlo</button><span class="status muted" id="clientStatus"></span></div>
+                <div class="row" hidden style="margin-top:6px"><button class="btn" type="button" id="findClient">Find in AroFlo</button><span class="status muted" id="clientStatus"></span></div>
                 <div id="aroClients" class="found" style="margin-top:6px"></div>
               </div>
               <div><label class="k" for="first">Contact first name</label><input type="text" id="first"></div>
@@ -334,7 +334,7 @@
               <div><label class="k" for="email">Email</label><input type="text" id="email"></div>
               <div style="grid-column:1/-1"><label class="k" for="addr">Site address</label><input type="text" id="addr"></div>
             </div>
-            <p class="small muted" id="clientNote">When AroFlo is connected, "Find in AroFlo" searches TradeHire's clients first; a new client is only added if there's no match.</p>
+            <p class="small muted" id="clientNote" hidden>When AroFlo is connected, "Find in AroFlo" searches TradeHire's clients first; a new client is only added if there's no match.</p>
             <div><span class="k">Access</span>
               <div class="row" id="access">
                 <button class="chip" type="button" data-access="easy" aria-pressed="false">Easy</button>
@@ -374,14 +374,11 @@
             <button class="btn" type="button" id="copyQuote">Copy the quote</button>
           </div>
           <div class="status muted" id="sendStatus"></div>
-          <span class="k">What would go to AroFlo</span>
-          <div class="preview" id="preview"></div>
+          <details class="small"><summary style="cursor:pointer">Show what goes to AroFlo</summary><div class="preview" id="preview" style="margin-top:6px"></div></details>
           <div class="aro">
             <div class="row"><span class="k" style="margin:0">AroFlo</span><span id="aroState" class="tag off">Not connected</span></div>
             <p class="small muted" id="aroIntro">AroFlo isn't connected to this page yet. Once the AroFlo connector is added to your Claude, these buttons check and save the quote in AroFlo. Until then, use Finish in Claude.</p>
-            <label class="row small" id="newClientRow" hidden><input type="checkbox" id="newClientOk"> I've checked: this is a new client, not one already in AroFlo</label>
             <div class="row">
-              <button class="btn aro-only" type="button" id="aroCheck" hidden>Check with AroFlo</button>
               <button class="btn primary aro-only" type="button" id="sendBtn" hidden>Put quote into AroFlo</button>
               <button class="btn" type="button" id="handoffBtn">Finish in Claude</button>
             </div>
@@ -412,7 +409,6 @@
               <div id="phResult" class="small"></div>
             </div>
           </div>
-          <p class="small muted">Nothing is saved in AroFlo without your approval. The quote goes in as In Progress, not sent, and the office sends it from AroFlo. Photos go in for staff only.</p>
         </div>
       </section>
 
@@ -972,8 +968,8 @@ function setAroState(status) {
   $("aroPill").textContent = status === "ready" ? "Test version · AroFlo connected" : "Demo · AroFlo answers are examples";
   document.querySelectorAll(".aro-only").forEach(e => e.hidden = false);
   $("aroIntro").textContent = status === "off"
-    ? "Demo mode: AroFlo isn't connected yet, so these buttons show example AroFlo answers, in the same shape the real AroFlo connector gives. Nothing is saved anywhere. In the live version the same buttons check and save the quote in TradeHire's AroFlo."
-    : "Check with AroFlo shows exactly what would be saved. Put quote into AroFlo saves it after your approval. If saving isn't allowed from this page, use Finish in Claude.";
+    ? "Demo: AroFlo's answers here are examples, and nothing is saved."
+    : "You approve the quote before it's saved. It goes in as In Progress, for the office to send.";
   $("clientNote").textContent = status === "off" ? "Demo: Find in AroFlo searches a few example clients. In the live version it searches TradeHire's clients, and a new client is only added if there's no match." : "Find in AroFlo searches TradeHire's clients first; a new client is only added if there's no match.";
 }
 const DEMO_CLIENTS = [
@@ -1070,7 +1066,7 @@ $("findClient").onclick = async () => {
     $("aroClients").querySelectorAll("input").forEach(r => r.onchange = () => {
       if (r.value === "new") { A.client = null; A.isNew = true; }
       else { A.client = items[Number(r.value)]; A.isNew = false; $("client").value = A.client.name; }
-      $("newClientRow").hidden = !A.isNew; render();
+      render();
     });
   } catch {}
 };
@@ -1125,38 +1121,42 @@ function clientRequest(preview) {
   if (preview) r.preview = true;
   return r;
 }
-function readyToSend() {
+const detailsStep = () => (WEB ? "step 2" : "step 1");
+/** Checks the quote can go in. Finds the client in AroFlo itself when nobody has yet: uses a single clear match, or asks. */
+async function readyToSend() {
   const q = quote();
   if (q.blockers.length) { $("aroResult").textContent = "Sort out the items in step 3 first: " + q.blockers.join(" "); return null; }
-  if (!A.client && !A.isNew) { $("aroResult").textContent = "In step 1, press Find in AroFlo and pick the client, or choose to add them as new."; return null; }
-  if (A.isNew && !$("newClientOk").checked) { $("aroResult").textContent = "Tick the box to confirm this is a new client."; return null; }
-  if (A.isNew && (!$("first").value.trim() || !$("last").value.trim())) { $("aroResult").textContent = "AroFlo needs the contact's first name and surname for a new client (step 1)."; return null; }
+  if (!A.client && !A.isNew) {
+    const name = $("client").value.trim();
+    if (!name) { $("aroResult").textContent = `Add the client's name in ${detailsStep()} first.`; return null; }
+    $("aroResult").textContent = "Finding the client in AroFlo...";
+    let items = [];
+    try { const p = await aroCall("aroflo_search_clients", { search: name.slice(0, 200) }, $("aroResult")); items = Array.isArray(p?.items) ? p.items : []; } catch { return null; }
+    const exact = items.filter(c => c.name.toLowerCase().replace(/\(example\)/, "").trim() === name.toLowerCase().replace(/\(example\)/, "").trim());
+    if (exact.length === 1) { A.client = exact[0]; A.isNew = false; $("client").value = A.client.name; }
+    else {
+      $("aroResult").innerHTML = `<p>${items.length ? "Which AroFlo client is this?" : `No AroFlo client called "${esc(name)}".`}</p>` + items.slice(0, 6).map((c, i) => `<label class="pick"><input type="radio" name="aroPick" value="${i}"> ${esc(c.name)}</label>`).join("")
+        + `<label class="pick"><input type="radio" name="aroPick" value="new"> ${items.length ? "None of these: " : ""}add "${esc(name)}" as a new client</label>`;
+      $("aroResult").querySelectorAll("input[name=aroPick]").forEach(r => r.onchange = () => {
+        if (r.value === "new") { A.client = null; A.isNew = true; } else { A.client = items[Number(r.value)]; A.isNew = false; $("client").value = A.client.name; }
+        $("aroResult").insertAdjacentHTML("beforeend", '<p class="small muted">Now press Put quote into AroFlo again.</p>'); render();
+      });
+      return null;
+    }
+  }
+  if (A.isNew && (!$("first").value.trim() || !$("last").value.trim())) { $("aroResult").textContent = `AroFlo needs the contact's first name and surname for a new client (${detailsStep()}).`; return null; }
   return q;
 }
 const transportNote = '<p class="small muted">Transport' + (HIDE ? "" : " ($" + RATES.transport_flat.rate + ")") + ' isn\'t sent as a line, because TradeHire doesn\'t show it to customers. Whether to fold it into a line or hide a line in AroFlo is still to decide.</p>';
-$("aroCheck").onclick = async () => {
-  const q = readyToSend(); if (!q) return;
-  $("aroResult").textContent = "Asking AroFlo what it would save...";
-  try {
-    let html = "";
-    if (A.isNew) { const c = await aroCall("aroflo_create_client", clientRequest(true), $("aroResult")); html += `<p><b>New client:</b> ${esc(c?.wouldSend?.[0]?.body?.name || $("client").value)} would be added.</p>`; }
-    if (!A.isNew) await lookupSite($("aroResult"));
-    const p = await aroCall("aroflo_create_quote", quoteRequest(q, true), $("aroResult"));
-    html += A.site ? `<p>Site found in AroFlo: ${esc(A.site.address)}.</p>` : `<p>This address isn't a site in AroFlo yet, so the quote goes on the client and the job address is written into the quote for the office to add.</p>`;
-    html += `<p><b>${A.demo ? "Demo, AroFlo would save" : "AroFlo would save"}:</b> a quote for ${esc(p?.client || $("client").value)}${p?.site ? " at " + esc(p.site) : ""}, ${esc(p?.lineCount ?? "")} lines${HIDE ? ", priced from TradeHire's rate card" : `, about ${money(Number(p?.estimatedSubtotalEx || 0))} ex GST`}. Nothing has been saved.</p>`;
-    if (p?.duplicateCheck) html += `<p class="small muted">Duplicate check: ${esc(p.duplicateCheck.quotesChecked)} open quotes for this client checked. ${esc(p.duplicateCheck.limit || "")}</p>`;
-    $("aroResult").innerHTML = html + transportNote;
-  } catch (e) { $("aroResult").innerHTML = esc(aroError(e)) + (e?.code === "tool_error" ? " If saving isn't switched on for you, use Finish in Claude." : ""); }
-};
 $("sendBtn").onclick = async () => {
-  const q = readyToSend(); if (!q) return;
+  const q = await readyToSend(); if (!q) return;
   $("sendBtn").disabled = true;
-  $("aroResult").textContent = "Saving in AroFlo. Approve it when Claude asks.";
+  $("aroResult").textContent = A.demo ? "Check the details below and approve them." : "Saving in AroFlo. Approve it when Claude asks.";
   try {
     if (A.demo) {
       const req = quoteRequest(q, false);
       const ok = await demoApprove("Save this quote in AroFlo?", [
-        `Client: ${$("client").value.trim()}${A.isNew ? " (new client, added first)" : ""}`,
+        `Client: ${$("client").value.trim()}${A.isNew ? " (new client, added first)" : " (found in AroFlo)"}`,
         `Site: ${$("addr").value.trim() || "none"}`,
         ...req.line_items.map(l => `${l.part_number || ""} ${l.name || ""} ${l.quantity}${l.unit_sell != null ? ` × $${l.unit_sell}` : ""}`.replace(/\s+/g, " ").trim()),
         `Description: Quoted by ${req.quoted_by}. ${req.measurements}`,
@@ -1167,15 +1167,15 @@ $("sendBtn").onclick = async () => {
     if (A.isNew) {
       const c = await aroCall("aroflo_create_client", clientRequest(false), $("aroResult"));
       const id = c?.clientId || c?.client?.id || c?.id;
-      if (id) { A.client = { id, name: $("client").value.trim() }; A.isNew = false; $("newClientRow").hidden = true; }
+      if (id) { A.client = { id, name: $("client").value.trim() }; A.isNew = false; }
     }
     if (!A.isNew && A.client?.id) await lookupSite($("aroResult"));
     const p = await aroCall("aroflo_create_quote", quoteRequest(q, false), $("aroResult"));
     A.quote = p;
-    $("aroResult").innerHTML = `<p><b>${A.demo ? "Demo, saved in AroFlo would read" : "Saved in AroFlo"}:</b> quote ${esc(p?.referenceNumber || p?.jobNumber || "")} for ${esc(p?.client || "")}, In Progress and not sent. ${esc(p?.next || "")}</p>` + transportNote;
+    $("aroResult").innerHTML = `<p><b>${A.demo ? "Demo, saved in AroFlo would read" : "Saved in AroFlo"}:</b> quote ${esc(p?.referenceNumber || p?.jobNumber || "")} for ${esc(p?.client || "")}, In Progress and not sent. ${esc(p?.next || "")}</p>` + (WEB ? "" : transportNote);
     $("aroPhotos").hidden = false;
   } catch (e) {
-    $("aroResult").innerHTML = `${esc(aroError(e))} <b>Nothing may have been saved, or it may have been: check AroFlo before trying again.</b> To finish it in a chat instead, use Finish in Claude.`;
+    $("aroResult").innerHTML = `${esc(aroError(e))} <b>Nothing may have been saved, or it may have been: check AroFlo before trying again.</b> ${WEB ? "" : "To finish it in a chat instead, use Finish in Claude."}`;
   } finally { $("sendBtn").disabled = false; }
 };
 function handoffMessage() {
@@ -1246,7 +1246,7 @@ $("phAttach").onclick = async () => {
   if (boxes.length && !picked.length) { $("phResult").insertAdjacentHTML("beforeend", '<p class="warnbox" style="margin-top:6px">Tick at least one photo to attach.</p>'); return; }
   const names = (A.photoList || []).filter((f, i) => picked.includes(Number(f.n ?? i + 1))).map(f => f.name);
   $("phAttach").disabled = true;
-  if (A.demo && !(await demoApprove("Attach these photos to the quote?", [(names.length ? names.join(", ") + " from the customer's email" : "The photos added from the phone") + (S.photos?.length ? `, plus ${S.photos.length} added in step 1` : ""), "Who sees them in AroFlo: staff only"]))) {
+  if (A.demo && !(await demoApprove("Attach these photos to the quote?", [(names.length ? names.join(", ") + " from the customer's email" : "The photos added from the phone") + (S.photos?.length ? `, plus ${S.photos.length} added in ${detailsStep()}` : ""), "Who sees them in AroFlo: staff only"]))) {
     $("phResult").insertAdjacentHTML("beforeend", "<p>Declined. No photos were attached.</p>"); $("phAttach").disabled = false; return;
   }
   const input = { batch_id: A.batch };
@@ -1378,6 +1378,7 @@ function setupLive() {
   $("guideBody").querySelectorAll("li").forEach(li => { li.innerHTML = li.innerHTML.replace(/step 1/g, "step \u0000").replace(/step 2/g, "step 1").replace(/step \u0000/g, "step 2"); });
   $("guideStart").innerHTML = "<b>Fill in the job details</b> in step 2: type them, or tap <i>Speak the job</i> and say them.";
   $("guideLive").parentNode.prepend($("guideLive"));
+  $("handoffBtn").hidden = true; // that hands the quote to a Claude chat, which the web page doesn't have
   if (HIDE) $("guidePrice").innerHTML = "<b>Check the price</b> in step 3. Every line uses an AroFlo part and shows the quantity. Prices are hidden on this public demo; in TradeHire's version each line is priced from TradeHire's rate card.";
   let libs = null, seq = 0;
   const load = () => libs ||= Promise.all([
