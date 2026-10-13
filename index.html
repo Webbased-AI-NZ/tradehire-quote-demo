@@ -6,35 +6,22 @@
 <title>TradeHire Quote Tool</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Montserrat:wght@600;700&family=Roboto:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800;900&display=swap">
 <style>
-  /* Layout: brand bar, guide, then a wide plan beside a narrow column of steps; one column on phones. */
-  :root {
-    --bg: #F2F4F9; --panel: #FFFFFF; --panel-2: #F6F8FC; --ink: #1A1A1A; --ink-soft: #555B66; --border: #DCE1EC;
-    --brand: #003399; --on-brand: #FFFFFF; --hi: #FFB600; --on-hi: #1A1A1A;
-    --accent: #003399; --accent-bg: rgba(0,51,153,0.08);
-    --warn: #8A5A00; --warn-bg: rgba(255,182,0,0.18); --ok: #1F7A54; --ok-bg: rgba(31,122,84,0.12); --bad: #B42318; --bad-bg: rgba(180,35,24,0.10);
-    --shadow: rgba(10,20,50,0.10);
-    --c-scaffold: #16803A; --c-wrap: #7CFF2E; --c-edge: #1F5BFF; --c-power: #E3211B; --c-none: rgba(255,255,255,0.85);
-    --font: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
-    --font-head: "Montserrat", "Segoe UI", system-ui, sans-serif;
-    --font-display: "Anton", "Impact", "Arial Narrow", sans-serif;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      color-scheme: dark;
-      --bg: #0B1220; --panel: #121B2E; --panel-2: #18233A; --ink: #E8ECF4; --ink-soft: #A3ADC2; --border: #26324D;
-      --accent: #8AAAFF; --accent-bg: rgba(138,170,255,0.14);
-      --warn: #FFC94D; --warn-bg: rgba(255,182,0,0.16); --ok: #5FD9A4; --ok-bg: rgba(95,217,164,0.14); --bad: #FF8A80; --bad-bg: rgba(255,138,128,0.14);
-      --shadow: rgba(0,0,0,0.45);
-    }
-  }
-  :root[data-theme="dark"] {
+  /* Layout: brand bar, guide, then a wide plan beside a narrow column of steps; one column on phones.
+     TradeHire's own look (tradehire.co.nz): near-black and charcoal, white type, their yellow, Figtree, pill buttons.
+     The site is dark, so the tool is dark in both light and dark system settings. */
+  :root, :root[data-theme="light"], :root[data-theme="dark"] {
     color-scheme: dark;
-    --bg: #0B1220; --panel: #121B2E; --panel-2: #18233A; --ink: #E8ECF4; --ink-soft: #A3ADC2; --border: #26324D;
-    --accent: #8AAAFF; --accent-bg: rgba(138,170,255,0.14);
-    --warn: #FFC94D; --warn-bg: rgba(255,182,0,0.16); --ok: #5FD9A4; --ok-bg: rgba(95,217,164,0.14); --bad: #FF8A80; --bad-bg: rgba(255,138,128,0.14);
+    --bg: #0E0E0E; --panel: #181818; --panel-2: #262626; --ink: #FFFFFF; --ink-soft: #B3B2AC; --border: #333333;
+    --brand: #FCC01D; --on-brand: #0E0E0E; --hi: #FCC01D; --on-hi: #0E0E0E;
+    --accent: #FCC01D; --accent-bg: rgba(252,192,29,0.14);
+    --warn: #FCC01D; --warn-bg: rgba(252,192,29,0.16); --ok: #5FD9A4; --ok-bg: rgba(95,217,164,0.14); --bad: #FF8A80; --bad-bg: rgba(255,138,128,0.14);
     --shadow: rgba(0,0,0,0.45);
+    --c-scaffold: #16803A; --c-wrap: #7CFF2E; --c-edge: #1F5BFF; --c-power: #E3211B; --c-none: rgba(255,255,255,0.85);
+    --font: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-head: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-display: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -43,23 +30,24 @@
   button { cursor: pointer; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  .bar { background: var(--brand); color: var(--on-brand); border-bottom: 4px solid var(--hi); }
+  .bar { background: var(--brand); color: var(--on-brand); }
   .bar-in { max-width: 1320px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  .brand { font-family: var(--font-display); font-size: 24px; letter-spacing: 0.03em; text-transform: uppercase; line-height: 1; }
-  .brand span { color: var(--hi); }
-  .pill { font-family: var(--font-head); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 4px 10px; border-radius: 12px; background: var(--hi); color: var(--on-hi); }
+  .brand { font-family: var(--font-display); font-size: 24px; font-weight: 900; letter-spacing: -0.02em; line-height: 1; display: flex; align-items: baseline; gap: 10px; }
+  .brand .slashes { font-style: italic; letter-spacing: -0.12em; margin-right: 2px; }
+  .brand span.tool { font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+  .pill { font-family: var(--font-head); font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; padding: 5px 12px; border-radius: 999px; background: #0E0E0E; color: var(--hi); }
 
   .wrap { max-width: 1320px; margin: 0 auto; padding-block: 18px 48px; padding-inline: 16px; display: grid; gap: 16px; }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); min-width: 0; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 18px; min-width: 0; }
   .card-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
   .card-b { padding: 14px 16px; display: grid; gap: 12px; }
-  h2 { font-family: var(--font-head); font-size: 15px; font-weight: 700; margin: 0; color: var(--accent); text-wrap: balance; }
-  h2 .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--hi); color: var(--on-hi); font-size: 12px; margin-right: 8px; }
-  h3 { font-family: var(--font-head); font-size: 13px; margin: 0; }
+  h2 { font-family: var(--font-head); font-size: 17px; font-weight: 900; text-transform: uppercase; letter-spacing: -0.01em; margin: 0; color: var(--ink); text-wrap: balance; }
+  h2 .n { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--hi); color: var(--on-hi); font-size: 13px; margin-right: 8px; vertical-align: 2px; }
+  h3 { font-family: var(--font-head); font-size: 13px; font-weight: 800; margin: 0; }
   p { margin: 0; }
   .muted { color: var(--ink-soft); }
   .small { font-size: 12.5px; }
-  .k { font-family: var(--font-head); font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-soft); display: block; margin-bottom: 4px; }
+  .k { font-family: var(--font-head); font-size: 10.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--hi); display: block; margin-bottom: 4px; }
 
   /* Guide */
   .guide-b { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; }
@@ -80,29 +68,30 @@
 
   /* Forms */
   .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
-  .tab, .chip, .btn { border: 1px solid var(--border); background: var(--panel-2); border-radius: 18px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
+  .tab, .chip, .btn { border: 1px solid var(--border); background: var(--panel-2); border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 700; }
   .tab[aria-selected="true"], .chip[aria-pressed="true"] { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
-  .btn { border-radius: 9px; }
-  .btn.primary { background: var(--hi); border-color: var(--hi); color: var(--on-hi); font-family: var(--font-head); }
+  .btn:hover, .chip:hover, .tab:hover, .brush:hover { border-color: var(--ink-soft); }
+  .btn.primary { background: var(--hi); border-color: var(--hi); color: var(--on-hi); font-family: var(--font-head); font-weight: 800; }
+  .btn.primary:hover { filter: brightness(1.06); }
   .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   @media (max-width: 480px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
-  input[type="text"], input[type="number"], textarea, select { width: 100%; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; font-size: 14px; }
+  input[type="text"], input[type="number"], textarea, select { width: 100%; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; font-size: 14px; }
   textarea { min-height: 120px; resize: vertical; }
   .note { border-left: 3px solid var(--accent); background: var(--accent-bg); padding: 8px 10px; border-radius: 0 8px 8px 0; font-size: 13px; }
-  .warnbox { background: var(--warn-bg); border: 1px solid var(--warn); color: var(--warn); border-radius: 9px; padding: 8px 10px; font-size: 13px; font-weight: 600; }
+  .warnbox { background: var(--warn-bg); border: 1px solid var(--warn); color: var(--warn); border-radius: 12px; padding: 8px 10px; font-size: 13px; font-weight: 600; }
   .found { display: grid; gap: 4px; font-size: 13px; }
   .found li { margin-left: 18px; }
 
   /* Plan */
   .tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .brush { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border); background: var(--panel-2); border-radius: 9px; padding: 6px 10px; font-size: 13px; font-weight: 600; }
+  .brush { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border); background: var(--panel-2); border-radius: 999px; padding: 7px 12px; font-size: 13px; font-weight: 700; }
   .brush[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
   .sw { width: 22px; height: 6px; border-radius: 3px; display: inline-block; }
   .sw.dash { background: repeating-linear-gradient(90deg, var(--c-power) 0 6px, transparent 6px 10px); height: 4px; }
-  .viewer { position: relative; overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: #1b2433; max-height: 70vh; touch-action: pan-x pan-y; }
+  .viewer { position: relative; overflow: auto; border: 1px solid var(--border); border-radius: 14px; background: #0E0E0E; max-height: 70vh; touch-action: pan-x pan-y; }
   .zoomer { position: relative; width: 100%; }
   .zoomer img { display: block; width: 100%; height: auto; max-width: none; user-select: none; -webkit-user-drag: none; }
   .zoomer svg { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -112,7 +101,7 @@
   .wall-vis.sel { filter: drop-shadow(0 0 6px #fff); }
   .power { stroke: var(--c-power); stroke-width: 7; stroke-dasharray: 18 12; stroke-linecap: round; }
   .power-dot { fill: var(--c-power); }
-  .corner { fill: #FFFFFF; stroke: var(--brand); stroke-width: 4; pointer-events: none; }
+  .corner { fill: #FFFFFF; stroke: #0E0E0E; stroke-width: 4; pointer-events: none; }
   .corner.sel { fill: var(--hi); }
   .corner-hit { fill: transparent; cursor: grab; touch-action: none; }
   .move-hit { fill: transparent; cursor: move; touch-action: none; }
@@ -120,11 +109,11 @@
   .viewer.power-mode { cursor: crosshair; }
   .legend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   @media (max-width: 640px) { .legend { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .leg { background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; font-size: 12.5px; display: grid; gap: 2px; font-variant-numeric: tabular-nums; }
+  .leg { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; font-size: 12.5px; display: grid; gap: 2px; font-variant-numeric: tabular-nums; }
   .leg b { font-family: var(--font-head); font-size: 12px; display: flex; gap: 6px; align-items: center; }
   .measure { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   @media (max-width: 640px) { .measure { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .m { background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; font-variant-numeric: tabular-nums; }
+  .m { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; font-variant-numeric: tabular-nums; }
   .m .v { font-family: var(--font-head); font-size: 16px; font-weight: 700; }
   .wallinfo { font-size: 13px; min-height: 20px; }
 
@@ -139,12 +128,12 @@
   .totals { display: grid; gap: 4px; font-variant-numeric: tabular-nums; }
   .totals div { display: flex; justify-content: space-between; }
   .totals .grand { font-family: var(--font-head); font-size: 18px; font-weight: 700; color: var(--accent); border-top: 1px solid var(--border); padding-top: 6px; }
-  .preview { background: var(--panel-2); border: 1px dashed var(--border); border-radius: 9px; padding: 10px 12px; font-size: 12.5px; white-space: pre-wrap; overflow-x: auto; font-variant-numeric: tabular-nums; }
+  .preview { background: var(--panel-2); border: 1px dashed var(--border); border-radius: 12px; padding: 10px 12px; font-size: 12.5px; white-space: pre-wrap; overflow-x: auto; font-variant-numeric: tabular-nums; }
   .status { font-size: 12.5px; min-height: 18px; }
   .aro { display: grid; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
   .pick { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 4px 0; }
   .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-top: 6px; }
-  .thumb { position: relative; display: grid; gap: 4px; border: 1px solid var(--border); border-radius: 9px; padding: 6px; background: var(--panel-2); cursor: pointer; }
+  .thumb { position: relative; display: grid; gap: 4px; border: 1px solid var(--border); border-radius: 12px; padding: 6px; background: var(--panel-2); cursor: pointer; }
   .thumb:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
   .thumb input { position: absolute; top: 10px; left: 10px; width: 18px; height: 18px; }
   .thumb img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; max-width: 100%; }
@@ -155,7 +144,7 @@
   .req .st { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
   .req .reply { grid-column: 1 / -1; font-size: 12.5px; color: var(--ink-soft); }
   .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
-  .ph { position: relative; aspect-ratio: 1; max-width: 100%; border-radius: 9px; border: 1px solid var(--border); background: var(--panel-2); overflow: hidden; display: grid; place-items: center; font-size: 12px; color: var(--ink-soft); text-align: center; padding: 4px; }
+  .ph { position: relative; aspect-ratio: 1; max-width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); overflow: hidden; display: grid; place-items: center; font-size: 12px; color: var(--ink-soft); text-align: center; padding: 4px; }
   .ph img { width: 100%; height: 100%; object-fit: cover; }
   .ph .x { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(0,0,0,0.6); color: #fff; font-size: 13px; line-height: 1; }
   .ph.add { border-style: dashed; cursor: pointer; }
@@ -163,13 +152,13 @@
   .ph.add:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
   #voiceBtn[aria-pressed="true"] { background: var(--bad); border-color: var(--bad); color: #fff; }
   .addrs { display: grid; gap: 4px; }
-  .addrs button { text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
+  .addrs button { text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
   .addrs button:hover, .addrs button:focus-visible { border-color: var(--accent); }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 
 <header class="bar"><div class="bar-in">
-  <div class="brand">TradeHire <span>Quote Tool</span></div>
+  <div class="brand"><span><span class="slashes">///</span>TradeHire</span><span class="tool">Quote Tool</span></div>
   <span class="pill" id="aroPill">Test version · AroFlo not connected</span>
 </div></header>
 
