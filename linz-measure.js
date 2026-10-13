@@ -301,64 +301,6 @@ export async function parcelAt(x, y, { fetchImpl = fetch } = {}) {
 }
 const centroid = (r) => [r.reduce((a, p) => a + p[0], 0) / r.length, r.reduce((a, p) => a + p[1], 0) / r.length];
 
-/**
- * How far the aerial photo's roof sits from where the laser scan puts it, in metres [dx, dy]. Aerial photos are lined
- * up to the ground, so a roof leans a metre or two away from where the plane was; the scan has no lean. This lines up
- * the photo's edges with the scan's roof edges around the main building, and returns [0, 0] unless the match is clear.
- */
-function photoOffset(rgb, dsm, dem, win, ring) {
-  if (!rgb || !dsm || !dem) return [0, 0];
-  const g = 0.25, [x0, y0, x1, y1] = win, W = Math.floor((x1 - x0) / g), H = Math.floor((y1 - y0) / g);
-  const k = Math.max(1, Math.round(g / rgb.res));
-  // photo brightness on a 0.25 m grid
-  const gray = new Float32Array(W * H).fill(NaN);
-  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
-    let sum = 0, n = 0;
-    for (let b = 0; b < k; b++) for (let a = 0; a < k; a++) {
-      const si = Math.floor(((i * g) + (a + 0.5) * rgb.res) / rgb.res), sj = Math.floor(((j * g) + (b + 0.5) * rgb.res) / rgb.res);
-      if (si >= rgb.width || sj >= rgb.height) continue;
-      const q = sj * rgb.width + si, v = rgb.bands[0][q] + rgb.bands[1][q] + rgb.bands[2][q];
-      if (Number.isFinite(v)) { sum += v; n++; }
-    }
-    if (n) gray[j * W + i] = sum / n;
-  }
-  const Sd = sampler(dsm, win), Sg = sampler(dem, win);
-  const hAt = (x, y) => { const v = Sd(x, y) - Sg(x, y); return Number.isFinite(v) ? Math.max(0, Math.min(20, v)) : NaN; };
-  const grad = (f, i, j) => { const a = f(i + 1, j), b = f(i - 1, j), c = f(i, j + 1), d = f(i, j - 1); return Number.isFinite(a + b + c + d) ? Math.hypot(a - b, c - d) / 2 : NaN; };
-  const photoG = (i, j) => (i < 0 || j < 0 || i >= W || j >= H ? NaN : gray[j * W + i]);
-  const pe = new Float32Array(W * H).fill(NaN);
-  let pm = 0, pn = 0;
-  for (let j = 1; j < H - 1; j++) for (let i = 1; i < W - 1; i++) { const v = grad(photoG, i, j); pe[j * W + i] = v; if (Number.isFinite(v)) { pm += v; pn++; } }
-  if (!pn) return [0, 0];
-  pm /= pn;
-  // scan roof edges within 4 m of the main building's outline
-  const edges = [];
-  const hG = (i, j) => hAt(x0 + (i + 0.5) * g, y1 - (j + 0.5) * g);
-  const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]);
-  const i0 = Math.max(1, Math.floor((Math.min(...xs) - 4 - x0) / g)), i1 = Math.min(W - 2, Math.ceil((Math.max(...xs) + 4 - x0) / g));
-  const j0 = Math.max(1, Math.floor((y1 - Math.max(...ys) - 4) / g)), j1 = Math.min(H - 2, Math.ceil((y1 - Math.min(...ys) + 4) / g));
-  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-    const v = grad(hG, i, j) / g; // metres of height per metre
-    if (v > 1 && distToRing(x0 + (i + 0.5) * g, y1 - (j + 0.5) * g, ring) < 2.5) edges.push(j * W + i); // the roof's own edges, not trees further out
-  }
-  if (edges.length < 40) return [0, 0];
-  const score = (di, dj) => { let s = 0, n = 0; for (const q of edges) { const i = (q % W) + di, j = Math.floor(q / W) + dj; if (i < 0 || j < 0 || i >= W || j >= H) continue; const v = pe[j * W + i]; if (Number.isFinite(v)) { s += v; n++; } } return n > edges.length * 0.8 ? s / n / pm : 0; };
-  const zero = score(0, 0);
-  let best = [0, 0, zero];
-  const R = Math.round(3 / g);
-  for (let dj = -R; dj <= R; dj++) for (let di = -R; di <= R; di++) { const v = score(di, dj); if (v > best[2]) best = [di, dj, v]; }
-  const [di, dj, v] = best;
-  if (Math.hypot(di, dj) * g < 0.3 || v < zero * 1.12 || Math.abs(di) === R || Math.abs(dj) === R) return [0, 0];
-  return [di * g, -dj * g];
-}
-/** The photo grid moved by [dx, dy] metres so its roof lands where the scan puts it; the uncovered edge is left blank. */
-function shiftPhoto(rgb, [dx, dy]) {
-  if (!dx && !dy) return rgb;
-  const si = Math.round(dx / rgb.res), sj = Math.round(-dy / rgb.res), W = rgb.width, H = rgb.height;
-  const bands = rgb.bands.map((b) => { const o = new Float32Array(W * H).fill(NaN); for (let j = 0; j < H; j++) { const sy = j + sj; if (sy < 0 || sy >= H) continue; for (let i = 0; i < W; i++) { const sx = i + si; if (sx >= 0 && sx < W) o[j * W + i] = b[sy * W + sx]; } } return o; });
-  return { ...rgb, bands };
-}
-
 const dateOf = (s) => { const d = new Date(s); return Number.isNaN(d) ? s : d.toLocaleDateString("en-NZ", { month: "short", year: "numeric" }); };
 
 /**
@@ -390,8 +332,7 @@ export async function measureAt(x, y, { GeoTIFF, index, fetchImpl = fetch, makeI
     const res = Math.max(0.075, span / 1600);
     const rgb = await readFirst(GeoTIFF, index, "rgb", lon, lat, win, res, { bandsWanted: 3 });
     if (rgb) {
-      const shift = photoOffset(rgb, dsm, dem, win, main.ring);
-      photo = { ...makeImage(shiftPhoto(rgb, shift)), res: rgb.res, col: rgb.col, shift };
+      photo = { ...makeImage(rgb), res: rgb.res, col: rgb.col };
     }
   }
   onStep("Measuring the walls");
@@ -426,7 +367,7 @@ export async function measureAt(x, y, { GeoTIFF, index, fetchImpl = fetch, makeI
       lidar_flown: dsm ? [dateOf(dsm.col.start), dateOf(dsm.col.end)] : null,
       photos: photo ? photo.col.title : "no LINZ aerial photo found"
     },
-    note: `Measured live from LINZ open data. The main building is marked as scaffold; ${nearby.length ? "other buildings on the same property (a garage, a shed) are shown dashed as Nothing; tap their walls to include them. " : ""}The outline follows the walls as LINZ traced them${main.captured ? ` (${main.captured})` : ""}, so check it and adjust it if the building has changed.${photo && (photo.shift[0] || photo.shift[1]) ? ` The photo has been moved ${r1(Math.hypot(...photo.shift))} m to line its roof up with the laser scan, because aerial photos make roofs lean; the ground in the photo may look slightly off as a result.` : ""}${dsm ? "" : " There's no laser scan here, so type the heights."}`
+    note: `Measured live from LINZ open data. The main building is marked as scaffold; ${nearby.length ? "other buildings on the same property (a garage, a shed) are shown dashed as Nothing; tap their walls to include them. " : ""}The outline follows the walls as LINZ traced them${main.captured ? ` (${main.captured})` : ""}, so check it and adjust it if the building has changed.${photo ? " Aerial photos make roofs lean, so if the outline sits a metre or two off the roof, use Move outline to slide it on; the lengths don't change." : ""}${dsm ? "" : " There's no laser scan here, so type the heights."}`
   };
 }
 

@@ -115,6 +115,8 @@
   .corner { fill: #FFFFFF; stroke: var(--brand); stroke-width: 4; pointer-events: none; }
   .corner.sel { fill: var(--hi); }
   .corner-hit { fill: transparent; cursor: grab; touch-action: none; }
+  .move-hit { fill: transparent; cursor: move; touch-action: none; }
+  .nudge { display: inline-grid; grid-template-columns: repeat(4, auto); gap: 4px; }
   .viewer.power-mode { cursor: crosshair; }
   .legend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   @media (max-width: 640px) { .legend { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -226,6 +228,7 @@
             <button class="brush" type="button" data-brush="none" aria-pressed="false"><span class="sw" style="background:repeating-linear-gradient(90deg,#999 0 4px,transparent 4px 7px)"></span>Nothing</button>
             <button class="brush" type="button" data-brush="power" aria-pressed="false"><span class="sw dash"></span>Power line</button>
             <button class="brush" type="button" data-brush="adjust" aria-pressed="false"><span class="sw" style="background:transparent;border:2px solid var(--accent);width:12px;height:12px;border-radius:50%"></span>Adjust outline</button>
+            <button class="brush" type="button" data-brush="move" aria-pressed="false"><span class="sw" style="background:transparent;border:2px dashed var(--accent);width:12px;height:12px;border-radius:3px"></span>Move outline</button>
             <span style="flex:1"></span>
             <button class="btn" type="button" id="zoomOut" aria-label="Zoom out">−</button>
             <button class="btn" type="button" id="zoomIn" aria-label="Zoom in">+</button>
@@ -240,6 +243,7 @@
           <div class="row">
             <button class="btn" type="button" id="allScaffold">Every wall scaffold</button>
             <button class="btn" type="button" id="clearPower">Remove power lines</button>
+            <span id="moveTools" hidden class="row"><span class="nudge" role="group" aria-label="Nudge the outline"><button class="btn" type="button" data-nudge="-1,0" aria-label="Move left">←</button><button class="btn" type="button" data-nudge="0,-1" aria-label="Move up">↑</button><button class="btn" type="button" data-nudge="0,1" aria-label="Move down">↓</button><button class="btn" type="button" data-nudge="1,0" aria-label="Move right">→</button></span><button class="btn" type="button" id="resetMove">Put it back</button></span>
             <span id="adjustTools" hidden class="row"><button class="btn" type="button" id="removeCorner">Remove corner</button><button class="btn" type="button" id="resetOutline">Reset to LINZ outline</button></span>
             <label class="row small" for="oneHeight" style="gap:6px;">Use one height for every wall
               <input type="number" id="oneHeight" min="0" step="0.1" placeholder="LINZ per wall" style="width:130px;">
@@ -507,6 +511,7 @@ function drawPlan() {
   svg.setAttribute("viewBox", `0 0 ${SITE.image.w} ${SITE.image.h}`);
   svg.innerHTML = "";
   const adjust = S.brush === "adjust";
+  if (S.brush === "move") svg.appendChild(el("rect", { x: 0, y: 0, width: SITE.image.w, height: SITE.image.h, class: "move-hit" }));
   walls().forEach((w, n) => {
     const sel = S.selWall && S.selWall.ri === w.ri && S.selWall.i === w.i;
     svg.appendChild(el("line", { x1: w.a[0], y1: w.a[1], x2: w.b[0], y2: w.b[1], class: "wall-vis " + w.part + (sel ? " sel" : ""), stroke: COLOUR[w.part] }));
@@ -542,6 +547,11 @@ function showWall(ri, i) {
 let raf = 0;
 $("plan").addEventListener("pointerdown", e => {
   const t = e.target;
+  if (S.brush === "move") { // drag the whole outline (every building) onto the roof in the photo
+    e.preventDefault();
+    S.drag = { move: true, start: svgPoint(e), orig: S.rings.map(r => r.pts.map(p => [...p])), moved: false };
+    $("plan").setPointerCapture(e.pointerId); return;
+  }
   if (S.brush !== "adjust" || t?.dataset?.cri === undefined) return;
   e.preventDefault();
   S.drag = { ri: Number(t.dataset.cri), i: Number(t.dataset.ci), start: svgPoint(e), moved: false };
@@ -551,12 +561,15 @@ $("plan").addEventListener("pointermove", e => {
   if (!S.drag) return;
   const p = svgPoint(e), d = S.drag;
   if (!d.moved && Math.hypot(p[0] - d.start[0], p[1] - d.start[1]) < 4) return;
-  d.moved = true; S.rings[d.ri].pts[d.i] = p; S.edited = true;
+  d.moved = true; S.edited = true;
+  if (d.move) { const dx = p[0] - d.start[0], dy = p[1] - d.start[1]; S.rings.forEach((r, ri) => { r.pts = d.orig[ri].map(([x, y]) => [x + dx, y + dy]); }); }
+  else S.rings[d.ri].pts[d.i] = p;
   if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); });
 });
 $("plan").addEventListener("pointerup", e => {
   const d = S.drag; if (!d) return;
   S.drag = null; d.justDragged = true; S.lastDrag = Date.now();
+  if (d.move) { $("wallInfo").textContent = d.moved ? "Outline moved. The wall lengths haven't changed; only where it sits on the photo." : "Drag anywhere on the photo to move the outline, or use the arrows."; render(); return; }
   if (!d.moved) { S.selCorner = { ri: d.ri, i: d.i }; $("wallInfo").textContent = `Corner selected on the ${S.rings[d.ri].name}. Drag it to move it, or press Remove corner.`; }
   else $("wallInfo").textContent = "Corner moved. The wall lengths and the price have updated.";
   render();
@@ -571,6 +584,7 @@ $("plan").addEventListener("click", e => {
   const t = e.target;
   if (t?.dataset?.ri === undefined) return;
   const ri = Number(t.dataset.ri), i = Number(t.dataset.i);
+  if (S.brush === "move") return;
   if (S.brush === "adjust") {
     if (Date.now() - (S.lastDrag || 0) < 300) return;
     const r = S.rings[ri], p = svgPoint(e);
@@ -587,11 +601,19 @@ document.querySelectorAll(".brush").forEach(b => b.onclick = () => {
   document.querySelectorAll(".brush").forEach(x => x.setAttribute("aria-pressed", x === b));
   $("viewer").classList.toggle("power-mode", S.brush === "power");
   $("adjustTools").hidden = S.brush !== "adjust";
+  $("moveTools").hidden = S.brush !== "move";
   $("wallInfo").textContent = S.brush === "power" ? "Tap where the power line starts, then where it ends."
+    : S.brush === "move" ? "Aerial photos make roofs lean, so the outline can sit a metre or two off the roof. Drag anywhere on the photo to slide the whole outline onto the roof, or use the arrows. The wall lengths don't change."
     : S.brush === "adjust" ? "Drag a corner to move it. Tap a wall to add a corner there. Tap a corner to select it, then Remove corner."
     : "Tap a wall to colour it with the chosen part, and to see or change its height.";
   drawPlan();
 });
+document.querySelectorAll("[data-nudge]").forEach(b => b.onclick = () => { // a quarter of a metre each press
+  const [ux, uy] = b.dataset.nudge.split(",").map(Number), step = 0.25 / SITE.image.m_per_px;
+  S.rings.forEach(r => { r.pts = r.pts.map(([x, y]) => [x + ux * step, y + uy * step]); }); S.edited = true;
+  $("wallInfo").textContent = "Outline moved a quarter of a metre. The wall lengths haven't changed."; render();
+});
+$("resetMove").onclick = () => { const parts = S.rings.map(r => r.part.slice()), hs = S.rings.map(r => r.h.slice()); S.rings = buildRings(); if (S.rings.every((r, i) => parts[i] && r.pts.length === parts[i].length)) S.rings.forEach((r, i) => { r.part = parts[i]; r.h = hs[i]; }); S.edited = false; $("wallInfo").textContent = "Outline put back where LINZ has it."; render(); };
 $("allScaffold").onclick = () => { S.rings.forEach(r => { r.part = r.part.map(() => "scaffold"); }); render(); };
 $("clearPower").onclick = () => { S.power = []; S.pending = null; render(); };
 $("removeCorner").onclick = () => {
