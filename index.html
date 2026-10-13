@@ -334,6 +334,13 @@
               <div><label class="k" for="email">Email</label><input type="text" id="email"></div>
               <div style="grid-column:1/-1"><label class="k" for="addr">Site address</label><input type="text" id="addr"></div>
             </div>
+            <div><span class="k">Job type</span>
+              <div class="row" id="jobTypes" role="group" aria-label="Job type">
+                <button class="chip" type="button" data-job="scaffold" aria-pressed="false">Scaffold</button>
+                <button class="chip" type="button" data-job="wrap" aria-pressed="false">Shrink wrap</button>
+                <button class="chip" type="button" data-job="edge" aria-pressed="false">Edge protection</button>
+              </div>
+            </div>
             <p class="small muted" id="clientNote" hidden>When AroFlo is connected, "Find in AroFlo" searches TradeHire's clients first; a new client is only added if there's no match.</p>
             <div><span class="k">Access</span>
               <div class="row" id="access">
@@ -696,6 +703,8 @@ function render() {
   if (S.site === "sample") drawPlan();
   document.querySelectorAll("#access .chip").forEach(c => c.setAttribute("aria-pressed", c.dataset.access === S.access));
   document.querySelectorAll("#mTypes .chip").forEach(c => c.setAttribute("aria-pressed", S.mTypes.has(c.dataset.type)));
+  const jt = jobTypesNow();
+  document.querySelectorAll("#jobTypes .chip").forEach(c => c.setAttribute("aria-pressed", jt.has(c.dataset.job)));
 
   const q = quote(), m = q.m;
   // shrink wrap goes on scaffold, so the scaffold total counts the wrapped walls too (they're priced on the combined part)
@@ -723,6 +732,42 @@ function previewText(q) {
   const L = q.lines.filter(l => !l.hidden).map(l => `  ${l.part.padEnd(4)} ${l.name}: ${l.qty}${l.amt === null ? "" : " = " + money(l.amt)}`).join("\n");
   return `Client: ${client}\n  New client, added only after an AroFlo search finds no match\nSite: ${addr}\nQuote name: ${name}\nDescription: Quoted by ${by}\nLines:\n${L || "  (none yet)"}\nTransport: built into the price, not a line\nTotal: ${HIDE ? "from the rate card" : money(q.sub)} + GST\nMeasurements: LINZ${S.site === "sample" && S.edited ? ", outline adjusted by hand" : ""}\nAttached, staff only: the coloured plan${(S.photos || []).length ? ` and ${S.photos.length} site photo${S.photos.length === 1 ? "" : "s"}` : ""}`;
 }
+
+/* ---------- job type: a quick way to colour the plan, and always shows what the plan has ---------- */
+function jobTypesNow() {
+  if (S.site !== "sample") return new Set(S.mTypes);
+  const parts = new Set(S.rings.flatMap(r => r.part)), out = new Set();
+  if (parts.has("scaffold") || parts.has("wrap")) out.add("scaffold"); // shrink wrap goes on scaffold
+  if (parts.has("wrap")) out.add("wrap");
+  if (parts.has("edge")) out.add("edge");
+  return out;
+}
+function pickBrush(name) { document.querySelector(`.brush[data-brush="${name}"]`)?.click(); }
+document.querySelectorAll("#jobTypes .chip").forEach(c => c.onclick = () => {
+  const t = c.dataset.job, on = jobTypesNow().has(t);
+  if (S.site !== "sample") { // typed measurements
+    if (on) S.mTypes.delete(t); else S.mTypes.add(t);
+    if (t === "wrap" && !on) S.mTypes.delete("scaffold");
+    render(); return;
+  }
+  // the buildings that are part of the job: every building on a measured site, except a shed or garage the live measure marks as extra
+  const mainRings = S.rings.filter(r => SITE.walls.find(w => w.building === r.name)?.main !== false);
+  const markMain = to => mainRings.forEach(r => { r.part = r.part.map(p => (p === "none" ? to : p)); });
+  const setAll = (from, to) => S.rings.forEach(r => { r.part = r.part.map(p => (from.includes(p) ? to : p)); });
+  if (t === "scaffold") {
+    if (on) setAll(["scaffold", "wrap"], "none");
+    else markMain("scaffold");
+    $("wallInfo").textContent = on ? "Scaffold taken off every wall." : "The main building's walls are marked as scaffold. Tap any wall that doesn't need it and choose Nothing.";
+  } else if (t === "wrap") {
+    if (on) setAll(["wrap"], "scaffold");
+    else { if (!S.rings.some(r => r.part.includes("scaffold"))) markMain("scaffold"); setAll(["scaffold"], "wrap"); }
+    $("wallInfo").textContent = on ? "Shrink wrap taken off; those walls stay as scaffold." : "The scaffold walls now have shrink wrap on them. Tap a wall to change it.";
+  } else {
+    if (on) { setAll(["edge"], "none"); $("wallInfo").textContent = "Edge protection taken off."; }
+    else { pickBrush("edge"); $("wallInfo").textContent = "Edge protection is usually only some sides: tap each wall that needs it (blue)."; }
+  }
+  render();
+});
 
 /* ---------- inputs ---------- */
 document.querySelectorAll("#access .chip").forEach(c => c.onclick = () => { S.access = c.dataset.access; render(); });
