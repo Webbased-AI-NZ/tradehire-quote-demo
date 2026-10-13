@@ -534,7 +534,7 @@ function svgPoint(evt) {
 function showWall(ri, i) {
   const w = walls().find(x => x.ri === ri && x.i === i); if (!w) return;
   const one = num($("oneHeight").value);
-  $("wallInfo").innerHTML = `<b>${esc(w.building)}</b>: ${r1(w.length_m)} m long, now ${esc(RATES.colours[w.part]?.label ?? "nothing")}. `
+  $("wallInfo").innerHTML = `<b>${esc(w.building)}</b>: ${r1(w.length_m)} m long, now ${esc(w.part === "wrap" ? "Shrink wrap on scaffold" : RATES.colours[w.part]?.label ?? "nothing")}. `
     + `<label for="wallH">Height</label> <input type="number" id="wallH" min="0" step="0.1" value="${r1(w.height_m)}" style="width:90px"> m `
     + `<span class="muted">(LINZ ${r1(w.linz_h)} m${one ? `; every wall is using ${r1(one)} m` : ""})</span>`;
   $("wallH").oninput = e => { const v = num(e.target.value); if (v && v > 0) { S.rings[ri].h[i] = v; render(); } };
@@ -647,7 +647,7 @@ function quote() {
     if (tier) lines.push({ key: "scaffold", part: P.scaffold.part, name: P.scaffold.name, qty: `${r1(m.scaffold.face)} square face metres × ${$r(tier.rate)} (${S.access})`, amt: priced(m.scaffold.face, tier.rate), tag: tier.status, quantity: m.scaffold.face, unit: tier.rate });
     else lines.push({ part: P.scaffold.part, name: P.scaffold.name, qty: `${r1(m.scaffold.face)} square face metres · choose easy, medium or hard`, amt: null });
   }
-  if (wrap) lines.push({ part: P.scaffold_wrap.part, name: P.scaffold_wrap.name, qty: `${r1(m.wrap.face)} square face metres · rate not set yet`, amt: null, tag: "not_set" });
+  if (wrap) lines.push({ part: P.scaffold_wrap.part, name: P.scaffold_wrap.name, qty: `${r1(m.wrap.face)} square face metres of scaffold with shrink wrap, as one line · rate not set yet`, amt: null, tag: "not_set" });
   if (m.edge.len > 0) lines.push({ key: "edge_protection", part: P.edge_protection.part, name: P.edge_protection.name, qty: `${r1(m.edge.len)} lineal metres × ${$r(R.edge_protection_per_lm.rate)}`, amt: priced(m.edge.len, R.edge_protection_per_lm.rate), tag: R.edge_protection_per_lm.status, quantity: m.edge.len, unit: R.edge_protection_per_lm.rate });
   if ((scaff || wrap) && weeks > 0) {
     lines.push({ key: "weekly_rent", part: P.weekly_rent.part, name: P.weekly_rent.name, qty: `${weeks} weeks × ${$r(R.weekly_rent.rate)}`, amt: priced(weeks, R.weekly_rent.rate), tag: R.weekly_rent.status, rent: true, quantity: weeks, unit: R.weekly_rent.rate });
@@ -680,8 +680,10 @@ function render() {
   document.querySelectorAll("#mTypes .chip").forEach(c => c.setAttribute("aria-pressed", S.mTypes.has(c.dataset.type)));
 
   const q = quote(), m = q.m;
-  const leg = [["scaffold", "Scaffold", m.scaffold], ["wrap", "Shrink wrap", m.wrap], ["edge", "Edge protection", m.edge]];
-  $("legend").innerHTML = leg.map(([k, label, v]) => `<div class="leg"><b><span class="sw" style="background:${COLOUR[k]}"></span>${label}</b><span>${v.n} walls · ${r1(v.len)} m</span><span>${k === "edge" ? "lineal metres" : r1(v.face) + " square face m"}</span></div>`).join("")
+  // shrink wrap goes on scaffold, so the scaffold total counts the wrapped walls too (they're priced on the combined part)
+  const allScaff = { n: m.scaffold.n + m.wrap.n, len: m.scaffold.len + m.wrap.len, face: m.scaffold.face + m.wrap.face };
+  const leg = [["scaffold", "Scaffold", allScaff, m.wrap.n ? `incl. ${m.wrap.n} shrink wrapped` : ""], ["wrap", "Shrink wrap", m.wrap, m.wrap.n ? "on the scaffold" : ""], ["edge", "Edge protection", m.edge, ""]];
+  $("legend").innerHTML = leg.map(([k, label, v, extra]) => `<div class="leg"><b><span class="sw" style="background:${COLOUR[k]}"></span>${label}</b><span>${v.n} walls · ${r1(v.len)} m</span><span>${k === "edge" ? "lineal metres" : r1(v.face) + " square face m"}</span>${extra ? `<span class="muted">${extra}</span>` : ""}</div>`).join("")
     + `<div class="leg"><b><span class="sw dash"></span>Power lines</b><span>${m.power} marked</span><span>sleeving, not measured</span></div>`;
 
   $("lines").innerHTML = q.lines.length ? q.lines.map(l => { const a = aroPart(l); return `<div class="line"><div class="name"><span class="part">${esc(a ? a.partNumber : l.part)}</span>${esc(a ? a.name : l.name)} ${l.tag ? TAG[l.tag] || "" : ""}</div><div class="qty">${esc(l.qty)}${a && a.quoteSell != null && !HIDE ? ` · AroFlo list price ${money(Number(a.quoteSell))}${a.unitType ? " per " + esc(a.unitType) : ""}` : ""}</div><div class="amt">${l.amt === null ? (HIDE && l.quantity > 0 ? '<span class="muted small">rate card</span>' : "-") : money(l.amt)}</div></div>`; }).join("") : '<p class="muted">Nothing to price yet.</p>';
@@ -833,7 +835,7 @@ $("dlPlan").onclick = async () => {
   g.fillStyle = "#1a1a1a"; g.font = "bold 26px Montserrat, Arial, sans-serif";
   g.fillText(`${$("addr").value.trim() || "Site"}  ·  ${$("client").value.trim() || ""}`, 24, H + 42);
   g.font = "22px Roboto, Arial, sans-serif";
-  const items = [["scaffold", `Scaffold ${r1(q.m.scaffold.len)} m`], ["wrap", `Shrink wrap ${r1(q.m.wrap.len)} m`], ["edge", `Edge protection ${r1(q.m.edge.len)} m`], ["power", `Power lines ${q.m.power}`]];
+  const items = [["scaffold", `Scaffold ${r1(q.m.scaffold.len + q.m.wrap.len)} m`], ["wrap", `Shrink wrap ${r1(q.m.wrap.len)} m (on the scaffold)`], ["edge", `Edge protection ${r1(q.m.edge.len)} m`], ["power", `Power lines ${q.m.power}`]];
   let x = 24;
   items.forEach(([k, t]) => { g.fillStyle = HEX[k]; g.fillRect(x, H + 72, 36, 12); g.fillStyle = "#1a1a1a"; g.fillText(t, x + 46, H + 86); x += 70 + g.measureText(t).width; });
   g.fillStyle = "#555b66"; g.font = "18px Roboto, Arial, sans-serif";
